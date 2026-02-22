@@ -1,0 +1,140 @@
+input:
+  type: object
+  properties:
+    paper_path:
+      type: string
+      description: Path to a markdown file containing an academic paper
+  required:
+    - paper_path
+
+steps:
+  # ── Read the paper ───────────────────────────────────────────────
+  - kind: read_file
+    name: paper
+    arguments: input.paper_path
+
+  # ── Chunk it into manageable pieces ──────────────────────────────
+  - kind: chunk
+    name: chunked
+    arguments: paper
+    chunk_size: 6000
+    overlap: 400
+
+  # ── Summarize each chunk ─────────────────────────────────────────
+  - kind: for_each
+    name: chunk_summaries
+    arguments: chunked.chunks
+    steps:
+      - kind: prompt
+        name: summary
+        arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
+        model: haiku
+        system_prompt: |
+          You are an expert academic paper analyst. Your job is to extract
+          the key arguments, evidence, and insights from a section of a paper.
+
+          Be precise and faithful to the source material. Do not hallucinate
+          claims the author did not make. If a section is transitional or
+          contains mostly references, say so briefly.
+        template: |
+          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from an academic paper.
+
+          --- BEGIN CHUNK ---
+          {{ args.text }}
+          --- END CHUNK ---
+
+          Extract the key points from this section. For each point, indicate
+          whether it is an argument, evidence, a definition, or a conclusion.
+        output:
+          type: object
+          properties:
+            key_points:
+              type: array
+              items:
+                type: object
+                properties:
+                  point:
+                    type: string
+                    description: The key point or claim
+                  category:
+                    type: string
+                    enum:
+                      - argument
+                      - evidence
+                      - definition
+                      - conclusion
+                      - context
+                    description: What kind of point this is
+                required:
+                  - point
+                  - category
+            section_topic:
+              type: string
+              description: Brief description of what this section covers
+          required:
+            - key_points
+            - section_topic
+
+  # ── Flatten all key points ───────────────────────────────────────
+  - kind: transform
+    name: all_points
+    arguments: chunk_summaries.key_points
+
+  # ── Synthesize into a final summary ──────────────────────────────
+  - kind: prompt
+    name: final_summary
+    arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
+    model: sonnet
+    system_prompt: |
+      You are an expert at synthesizing academic papers into clear,
+      structured summaries. You produce summaries that a busy researcher
+      could read in 2 minutes and understand the paper's contribution.
+    template: |
+      The following key points were extracted from an academic paper, organized
+      by the sections they appeared in:
+
+      {% for topic in args.section_topics %}
+      ## Section: {{ topic }}
+      {% endfor %}
+
+      All extracted points:
+      {% for point in args.points %}
+      - [{{ point.category | upper }}] {{ point.point }}
+      {% endfor %}
+
+      Synthesize these into a structured summary of the paper with:
+      1. A one-paragraph executive summary
+      2. The paper's core thesis
+      3. The main arguments (numbered)
+      4. Key evidence or examples cited
+      5. The author's conclusions and recommendations
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: One paragraph overview of the entire paper
+        core_thesis:
+          type: string
+          description: The central argument or claim of the paper
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: The main arguments made in the paper
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: Key evidence, examples, or case studies cited
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: The author's conclusions and recommendations
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions

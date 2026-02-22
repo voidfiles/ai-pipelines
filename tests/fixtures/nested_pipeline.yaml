@@ -1,0 +1,49 @@
+input:
+  type: object
+  properties:
+    documents:
+      type: array
+      items:
+        type: object
+        properties:
+          title:
+            type: string
+          content:
+            type: string
+        required:
+          - title
+          - content
+  required:
+    - documents
+
+steps:
+  # Process each document
+  - kind: pipeline
+    name: processed
+    arguments: input.documents
+    steps:
+      # Preserve metadata
+      - kind: transform
+        name: meta
+        arguments: '{"title": item.title}'
+
+      # Chunk the content
+      - kind: chunk
+        name: chunks
+        arguments: item.content
+        chunk_size: 50
+        overlap: 10
+
+      # Process each chunk
+      - kind: for_each
+        name: chunk_results
+        arguments: chunks.chunks
+        steps:
+          - kind: transform
+            name: chunk_info
+            arguments: '{"index": item.index, "length": $length(item.text), "title": meta.title}'
+
+  # Flatten all chunk results
+  - kind: transform
+    name: all_chunks
+    arguments: $reduce(processed, $append)

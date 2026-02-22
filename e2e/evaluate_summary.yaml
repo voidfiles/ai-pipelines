@@ -1,0 +1,129 @@
+input:
+  type: object
+  properties:
+    paper_path:
+      type: string
+      description: Path to the markdown file that was summarized
+    summary_path:
+      type: string
+      description: Path to the output.json from summarize_paper.yaml
+  required:
+    - paper_path
+    - summary_path
+
+steps:
+  # ── Load the source material and the summary ────────────────────
+  - kind: read_file
+    name: paper
+    arguments: input.paper_path
+
+  - kind: read_file
+    name: summary_raw
+    arguments: input.summary_path
+
+  # ── Parse the JSON string into an object ────────────────────────
+  # read_file returns raw text, so we need $eval to parse the JSON.
+  - kind: transform
+    name: summary
+    arguments: $eval(summary_raw)
+
+  # ── Build a single text block for evaluation ────────────────────
+  # Combines all structured fields into one readable string so the
+  # evaluate steps can compare it against the source paper.
+  - kind: transform
+    name: summary_text
+    arguments: >
+      summary.executive_summary
+      & "\n\nCore thesis: " & summary.core_thesis
+      & "\n\nMain arguments:\n- " & $join(summary.main_arguments, "\n- ")
+      & "\n\nKey evidence:\n- " & $join(summary.key_evidence, "\n- ")
+      & "\n\nConclusions:\n- " & $join(summary.conclusions, "\n- ")
+
+  # ── Summarization quality ───────────────────────────────────────
+  # Measures information coverage (do the key topics survive?) and
+  # conciseness (is the summary shorter than the source?).
+  #
+  # 3 LLM calls internally:
+  #   1. Extract keyphrases from the paper
+  #   2. Generate yes/no questions from those keyphrases
+  #   3. Check if the summary can answer each question
+  #
+  # score = qa_score * 0.5 + conciseness * 0.5
+  - kind: evaluate
+    name: summary_quality
+    strategy: summarization
+    model: haiku
+    arguments: '{"source": paper, "summary": summary_text}'
+
+  # ── Faithfulness ────────────────────────────────────────────────
+  # Decomposes the summary into atomic factual claims and checks
+  # each one against the original paper via binary NLI.
+  #
+  # 2 LLM calls internally:
+  #   1. Break summary into atomic claims (no pronouns)
+  #   2. For each claim, verdict: supported (1) or not (0)
+  #
+  # score = supported_claims / total_claims
+  - kind: evaluate
+    name: faithfulness
+    strategy: faithfulness
+    model: haiku
+    arguments: '{"source": paper, "response": summary_text}'
+
+  # ── Hallucination ──────────────────────────────────────────────
+  # Detects whether the summary actively *contradicts* the paper.
+  # Similar to faithfulness but with 3-way NLI: claims are judged
+  # as supported, neutral, or contradicted. Only contradictions
+  # hurt the score. Neutral claims (true but not in the paper)
+  # are not penalized, unlike faithfulness which penalizes them.
+  #
+  # 2 LLM calls internally:
+  #   1. Break summary into atomic claims (reuses faithfulness decomposition)
+  #   2. For each claim: supported / neutral / contradicted
+  #
+  # score = 1 - contradicted_claims / total_claims
+  - kind: evaluate
+    name: hallucination
+    strategy: hallucination
+    model: haiku
+    arguments: '{"context": paper, "response": summary_text}'
+
+  # ── Factual accuracy ───────────────────────────────────────────
+  # Extracts atomic facts from the summary and verifies each one
+  # against the paper with a 3-way verdict: yes / unclear / no.
+  # More granular than faithfulness (3-way scoring vs binary) and
+  # based on the FActScore methodology.
+  #
+  # 2 LLM calls internally:
+  #   1. Extract up to 10 atomic facts from the summary
+  #   2. Verify each fact against the paper (yes=1.0, unclear=0.5, no=0.0)
+  #
+  # score = mean of per-fact scores
+  - kind: evaluate
+    name: factual_accuracy
+    strategy: factual_accuracy
+    model: haiku
+    arguments: '{"question": "What are the key points of this paper?", "context": paper, "response": summary_text}'
+
+  # ── Final scorecard ─────────────────────────────────────────────
+  - kind: transform
+    name: scorecard
+    arguments: >
+      {
+        "summarization_score": summary_quality.score,
+        "qa_score": summary_quality.qa_score,
+        "conciseness": summary_quality.conciseness,
+        "faithfulness_score": faithfulness.score,
+        "hallucination_score": hallucination.score,
+        "factual_accuracy_score": factual_accuracy.score,
+        "overall": (summary_quality.score + faithfulness.score + hallucination.score + factual_accuracy.score) / 4,
+        "detail": {
+          "keyphrases_extracted": $count(summary_quality.keyphrases),
+          "questions_generated": summary_quality.total_questions,
+          "questions_answered": summary_quality.correct_answers,
+          "claims_decomposed": faithfulness.total_claims,
+          "claims_supported": faithfulness.supported_claims,
+          "contradicted_claims": hallucination.contradicted_claims,
+          "facts_verified": $count(factual_accuracy.verdicts)
+        }
+      }

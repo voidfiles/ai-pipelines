@@ -1,0 +1,77 @@
+input:
+  type: object
+  properties:
+    source_text:
+      type: string
+    summary_text:
+      type: string
+    question:
+      type: string
+    context:
+      type: string
+    response:
+      type: string
+    concise_context:
+      type: string
+  required:
+    - source_text
+    - summary_text
+
+steps:
+  # Existing strategies
+  - kind: evaluate
+    name: summary_quality
+    strategy: summarization
+    model: haiku
+    arguments: '{"source": input.source_text, "summary": input.summary_text}'
+
+  - kind: evaluate
+    name: faithfulness_check
+    strategy: faithfulness
+    model: haiku
+    arguments: '{"source": input.source_text, "response": input.summary_text}'
+
+  # New strategies
+  - kind: evaluate
+    name: hallucination_check
+    strategy: hallucination
+    model: haiku
+    arguments: '{"context": input.context, "response": input.response}'
+
+  - kind: evaluate
+    name: retrieval_quality
+    strategy: context_relevance
+    model: haiku
+    arguments: '{"question": input.question, "context": input.context}'
+
+  - kind: evaluate
+    name: context_usage
+    strategy: context_utilization
+    model: haiku
+    arguments: '{"question": input.question, "context": input.context, "response": input.response}'
+
+  - kind: evaluate
+    name: accuracy
+    strategy: factual_accuracy
+    model: haiku
+    arguments: '{"question": input.question, "context": input.context, "response": input.response}'
+
+  - kind: evaluate
+    name: compression_quality
+    strategy: context_conciseness
+    model: haiku
+    arguments: '{"question": input.question, "context": input.context, "concise_context": input.concise_context}'
+
+  - kind: transform
+    name: scorecard
+    arguments: >
+      {
+        "summarization": summary_quality.score,
+        "faithfulness": faithfulness_check.score,
+        "hallucination": hallucination_check.score,
+        "relevance": retrieval_quality.score,
+        "utilization": context_usage.score,
+        "accuracy": accuracy.score,
+        "conciseness": compression_quality.score,
+        "average": (summary_quality.score + faithfulness_check.score) / 2
+      }

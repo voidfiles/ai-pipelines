@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# e2e artifacts
+e2e/logs/
+e2e/output.json
+e2e/evaluate.json
+
+ralph/logs/
+ralph/output.json
+ralph/evaluate.json

@@ -1,0 +1,26 @@
+input:
+  type: object
+  properties:
+    dir:
+      type: string
+      description: Path to directory containing text files
+  required:
+    - dir
+
+steps:
+  - kind: find_files
+    name: files
+    arguments: input.dir
+    pattern: "*.txt"
+
+  - kind: for_each
+    name: file_contents
+    arguments: files
+    steps:
+      - kind: read_file
+        name: content
+        arguments: item.path
+
+  - kind: transform
+    name: summary
+    arguments: '{"file_count": $count(files), "contents": file_contents}'
