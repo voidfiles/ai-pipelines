@@ -1,0 +1,267 @@
+# EXPERIMENT: Two-step with 300-char compression, no-merge instruction
+# DATE: 2026-02-22
+# HYPOTHESIS: Two-step (draft+verify), 300-char limits, no merge - fix exp5 QA regression
+# RESULT: CRASHED + partial results showed systematic_review faithfulness=0.2603 (catastrophic!)
+#   Crash: no_silver_bullet chunk missing section_topic field (haiku omission, non-deterministic)
+#   Partial result: systematic_review overall=0.5244 (faithfulness=0.26) before crash
+# FAILURE REASON: Two-step approach does NOT scale to large papers (systematic_review 331k chars).
+#   Draft step generates comprehensive summary, verify step receives 200+ extracted points +
+#   long draft = overwhelmed model starts hallucinating. 0.26 faithfulness = 74% of claims
+#   are unsupported. This rules out two-step approaches for mixed paper sets.
+# ---
+input:
+  type: object
+  properties:
+    paper_path:
+      type: string
+      description: Path to a markdown file containing an academic paper
+  required:
+    - paper_path
+
+steps:
+  # ── Read the paper ───────────────────────────────────────────────
+  - kind: read_file
+    name: paper
+    arguments: input.paper_path
+
+  # ── Chunk it into manageable pieces ──────────────────────────────
+  - kind: chunk
+    name: chunked
+    arguments: paper
+    chunk_size: 6000
+    overlap: 400
+
+  # ── Summarize each chunk ─────────────────────────────────────────
+  - kind: for_each
+    name: chunk_summaries
+    arguments: chunked.chunks
+    steps:
+      - kind: prompt
+        name: summary
+        arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
+        model: haiku
+        system_prompt: |
+          You are an expert analyst extracting structured information from any type of
+          written work — academic papers, essays, blog posts, books, or reports.
+
+          For each section, extract ALL of the following with precision:
+
+          1. NAMED ENTITIES: Every person (full name including Jr./Sr./Dr.), organization,
+             company, product, tool, technology, or named concept mentioned.
+             Examples: "Frederick P. Brooks Jr.", "Google Reader", "Chris Wetherell",
+             "The Wire", "Kuleshov Effect", "Harlan Mills", "UNC Chapel Hill".
+
+          2. SPECIFIC CLAIMS: Exact arguments, findings, statistics, rankings, and
+             comparisons. Use source phrasing when distinctive:
+             e.g. "holds more promise than any other technical fad"
+             e.g. "factor-of-five gain in productivity"
+
+          3. DEFINITIONS: Author-defined concepts or terms with their precise meaning.
+
+          4. CONCLUSIONS: Recommendations, predictions, or key takeaways.
+
+          Be faithful: only report what the text actually says. If a claim is hedged
+          ("could", "may", "suggests"), preserve that hedging.
+        template: |
+          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from a written work.
+
+          --- BEGIN CHUNK ---
+          {{ args.text }}
+          --- END CHUNK ---
+
+          Extract ALL key information. Prioritize specific names, tools, statistics,
+          and distinctive phrasing. Classify each point accurately.
+        output:
+          type: object
+          properties:
+            key_points:
+              type: array
+              items:
+                type: object
+                properties:
+                  point:
+                    type: string
+                    description: The specific claim, name, definition, or concept — use exact source language when distinctive
+                  category:
+                    type: string
+                    description: "argument | evidence | definition | conclusion | named_entity | comparison"
+                required:
+                  - point
+                  - category
+            section_topic:
+              type: string
+              description: Brief description of what this section covers
+          required:
+            - key_points
+            - section_topic
+
+  # ── Flatten all key points ───────────────────────────────────────
+  - kind: transform
+    name: all_points
+    arguments: chunk_summaries.key_points
+
+  # ── Draft synthesis ───────────────────────────────────────────────
+  # First pass: comprehensive coverage, no length restrictions.
+  # Goal: capture ALL named entities, facts, and key claims for high QA score.
+  - kind: prompt
+    name: draft_summary
+    arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
+    model: sonnet
+    system_prompt: |
+      You are an expert at synthesizing written works into comprehensive, faithful
+      structured summaries.
+
+      FAITHFULNESS (critical): Only state claims that appear in the extracted points.
+      Preserve the author's hedging language ("could", "may", "suggests").
+      Never upgrade hedged language to absolutes.
+      Include the author's full name and affiliation as stated in the source.
+
+      COVERAGE (critical for QA): Include ALL of the following from extracted points:
+      - Every named person (full name with suffixes), organization, product, and tool
+      - Every specific comparison, ranking, and quantitative claim
+      - Every named concept, framework, and technical term
+      - All major sections and their key arguments
+
+      STRUCTURE: Write a comprehensive draft — do not artificially limit length.
+      Aim for 10-12 main_arguments, 6-10 key_evidence items, 5-8 conclusions.
+    template: |
+      The following key points were extracted from a written work:
+
+      Sections covered: {{ args.section_topics | join(", ") }}
+
+      All extracted points:
+      {% for point in args.points %}
+      - [{{ point.category | upper }}] {{ point.point }}
+      {% endfor %}
+
+      Write a comprehensive draft summary. Include ALL named persons, tools, and
+      concepts from the extracted points. Cover all major sections.
+      Ensure every claim traces to a specific extracted point above.
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: Comprehensive overview paragraph
+        core_thesis:
+          type: string
+          description: The central argument or claim
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: 10-12 key arguments
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: 6-10 specific evidence items with names and data
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: 5-8 conclusions or recommendations
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions
+
+  # ── Verify and compress ───────────────────────────────────────────
+  # Second pass: faithfulness check + moderate compression.
+  # Goal: same QA coverage, shorter output (300-char per arg), verified claims only.
+  - kind: prompt
+    name: final_summary
+    arguments: '{"draft": draft_summary, "points": $reduce(all_points, $append)}'
+    model: sonnet
+    system_prompt: |
+      You are a strict editor and fact-checker. You receive a comprehensive draft summary
+      and the original extracted points. Produce a verified, compressed final summary.
+
+      STEP 1 — FAITHFULNESS CHECK (remove hallucinations):
+      For each draft item, verify it directly corresponds to extracted points below.
+      - If a claim appears in extracted points: KEEP it (after compressing)
+      - If a claim is NOT in extracted points: REMOVE it entirely
+      - Never invent, infer, or extrapolate beyond what extracted points state
+      - Preserve hedging: "could", "may", "suggests" — never upgrade to "eliminates"/"proves"
+
+      STEP 2 — INDEPENDENT COMPRESSION (do NOT merge items):
+      Rewrite each surviving item as ONE tight sentence. Compress items INDEPENDENTLY:
+      - Do NOT combine two different items into one (this destroys QA coverage)
+      - Each item keeps its own distinct topic intact
+      - Keep ALL named persons (full names), organizations, products, and tools
+      - Keep ALL specific comparisons, rankings, quantitative data, and distinctive phrases
+      Limits per item:
+      - executive_summary: 3 sentences max, 500 characters total max
+      - core_thesis: 1 sentence, 150 characters max
+      - main_arguments: 1 sentence each, 300 characters max each
+      - key_evidence: 1 sentence each, 250 characters max each
+      - conclusions: 1 sentence each, 200 characters max each
+
+      STEP 3 — ENTITY CHECK: After compressing, verify all significant named entities
+      from the draft appear at least once. If a key name was compressed away, weave it
+      back into the most relevant remaining item.
+    template: |
+      DRAFT SUMMARY (comprehensive, to be verified and compressed):
+
+      Executive summary: {{ args.draft.executive_summary }}
+
+      Core thesis: {{ args.draft.core_thesis }}
+
+      Main arguments:
+      {% for arg in args.draft.main_arguments %}
+      - {{ arg }}
+      {% endfor %}
+
+      Key evidence:
+      {% for ev in args.draft.key_evidence %}
+      - {{ ev }}
+      {% endfor %}
+
+      Conclusions:
+      {% for c in args.draft.conclusions %}
+      - {{ c }}
+      {% endfor %}
+
+      EXTRACTED POINTS (the ONLY valid sources — verify each draft item against these):
+      {% for point in args.points %}
+      - {{ point.point }}
+      {% endfor %}
+
+      Now produce the verified+compressed final summary:
+      - Check each item against extracted points (remove if not found)
+      - Compress each surviving item to one tight sentence (within the character limits)
+      - DO NOT merge different items — each item must cover its own distinct topic
+      - Preserve all named entities and distinctive source phrases
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: 3 sentences max, 500 characters total
+        core_thesis:
+          type: string
+          description: The central argument in one sentence, max 150 chars
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: Verified, independently-compressed arguments (1 sentence, max 300 chars each)
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: Verified, compressed evidence items with all names (max 250 chars each)
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: Verified, compressed conclusions (max 200 chars each)
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions
+# This file needs header comment added separately
