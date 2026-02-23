@@ -138,7 +138,7 @@ steps:
       - executive_summary: 3-4 tight sentences covering the whole work (max 600 chars)
       - core_thesis: ONE sentence stating the central claim (max 200 chars)
       - main_arguments: 12-16 ONE-sentence arguments, each max 200 chars; give EACH major topic its OWN item
-      - key_evidence: 8-12 ONE-sentence items naming specific people, tools, examples, or data (max 200 chars each)
+      - key_evidence: 10-14 ONE-sentence items naming specific people, tools, examples, or data (max 200 chars each)
       - conclusions: 5-8 ONE-sentence actionable conclusions or recommendations
 
       Pack maximum information per sentence. Use precise nouns. Omit filler phrases.
@@ -161,7 +161,7 @@ steps:
           type: array
           items:
             type: string
-          description: 8-12 one-sentence evidence items with specific names and data (max 200 chars each)
+          description: 10-14 one-sentence evidence items with specific names and data (max 200 chars each)
         conclusions:
           type: array
           items:
