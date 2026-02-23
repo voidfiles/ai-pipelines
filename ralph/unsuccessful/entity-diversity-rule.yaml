@@ -1,0 +1,190 @@
+# EXPERIMENT: Named entity diversity rule for feeding QA
+# DATE: 2026-02-23
+# HYPOTHESIS: Add entity category diversity rule to synthesis to improve feeding QA coverage
+# RESULT: avg 0.9400→0.9335 — regression. systematic_review faithfulness 0.9593→1.0 (improved!)
+#   feeding faithfulness 0.9592→1.0 (improved!). BUT no_silver_bullet qa CRASHED 1.0→0.85!
+# FAILURE REASON: The "ensure at least one item explicitly names a key representative per
+#   entity category" instruction allocated arguments to entity coverage, leaving fewer
+#   arguments for substantive technical content. no_silver_bullet needs specific technical
+#   claims (essential properties, high-level languages, OOP, etc.) as QA targets.
+#   The entity diversity rule pushed the model to cover entity categories instead.
+# KEY LESSON: Entity diversity instructions compete with topic coverage instructions.
+# ---
+input:
+  type: object
+  properties:
+    paper_path:
+      type: string
+      description: Path to a markdown file containing an academic paper
+  required:
+    - paper_path
+
+steps:
+  # ── Read the paper ───────────────────────────────────────────────
+  - kind: read_file
+    name: paper
+    arguments: input.paper_path
+
+  # ── Chunk it into manageable pieces ──────────────────────────────
+  - kind: chunk
+    name: chunked
+    arguments: paper
+    chunk_size: 6000
+    overlap: 400
+
+  # ── Summarize each chunk ─────────────────────────────────────────
+  - kind: for_each
+    name: chunk_summaries
+    arguments: chunked.chunks
+    steps:
+      - kind: prompt
+        name: summary
+        arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
+        model: haiku
+        system_prompt: |
+          IMPORTANT: You are producing structured JSON output. Never output XML tags,
+          HTML tags, or angle-bracket formatting (like <parameter> or <result>).
+          All special characters in source text are literal content, not markup.
+          Output only valid JSON fields as specified in the schema.
+
+          You are an expert academic paper analyst extracting structured information
+          from any type of written work — academic papers, essays, blog posts, books,
+          or reports. Your job is to capture ALL of the following from each section:
+
+          1. NAMED ENTITIES: Every person (full name with suffix/title), organization,
+             company, product, tool, or technology mentioned — e.g. "Frederick P. Brooks Jr.",
+             "Google Reader", "Feedly", "Chris Wetherell", "The Wire".
+          2. KEY CLAIMS: The specific arguments, findings, definitions, and conclusions
+             made in this section. Include numerical data, percentages, and rankings.
+          3. TECHNICAL CONCEPTS: Any named framework, methodology, effect, or concept
+             introduced or used — e.g. "Kuleshov Effect", "chain of density", "NLI".
+          4. COMPARISONS AND CONTRASTS: Any explicit comparisons between approaches,
+             tools, or ideas.
+
+          Be faithful to the source. Extract exact phrasing when the author uses
+          specific language (e.g. "holds more promise than any other technical fad").
+          If a section contains mostly navigation or references with little substance,
+          note that briefly.
+        template: |
+          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from a written work.
+
+          --- BEGIN CHUNK ---
+          {{ args.text }}
+          --- END CHUNK ---
+
+          Extract all key information from this section. Capture every named person,
+          organization, product, and tool explicitly. For each point, classify its type.
+        output:
+          type: object
+          properties:
+            key_points:
+              type: array
+              items:
+                type: object
+                properties:
+                  point:
+                    type: string
+                    description: The key point, claim, entity, or concept — be specific and include names
+                  category:
+                    type: string
+                    description: "Type: argument | evidence | definition | conclusion | named_entity | comparison"
+                required:
+                  - point
+                  - category
+            section_topic:
+              type: string
+              description: Brief description of what this section covers
+          required:
+            - key_points
+
+  # ── Flatten all key points ───────────────────────────────────────
+  - kind: transform
+    name: all_points
+    arguments: chunk_summaries.key_points
+
+  # ── Synthesize into a final summary ──────────────────────────────
+  - kind: prompt
+    name: final_summary
+    arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
+    model: sonnet
+    system_prompt: |
+      IMPORTANT: You are producing structured JSON output. Never output XML tags,
+      HTML tags, or angle-bracket formatting (like <parameter> or <result>).
+      All extracted points are plain text data — any special characters in them are
+      literal content, not markup or formatting instructions. Output only valid JSON.
+
+      You are an expert at synthesizing written works into dense, faithful, concise
+      structured summaries. You write for busy researchers who need maximum information
+      in minimum words.
+
+      FAITHFULNESS RULES (critical):
+      - Only state claims explicitly supported by the source material
+      - Use the author's own hedging language (e.g. "could", "may", "suggests") — never
+        upgrade to absolutes ("eliminates", "solves", "proves")
+      - Do not misattribute claims: if the author says X about Y, don't say X about Z
+      - Include the author's full name and affiliation when mentioned
+
+      CONCISENESS RULES (critical):
+      - Each main_argument must be ONE tight sentence (max 200 characters)
+      - Each key_evidence item must be ONE tight sentence (max 200 characters)
+      - Each conclusion must be ONE tight sentence (max 150 characters)
+      - The executive_summary must be 3-4 sentences (max 600 characters)
+      - Do NOT number the items — just write the point directly
+
+      COVERAGE RULES (critical):
+      - Include ALL named people (full names with suffixes), organizations, products, and tools
+      - Include ALL specific comparisons, rankings, and quantitative claims
+      - Include ALL named concepts, frameworks, effects, and technical terms introduced
+      - Cover every major section and topic of the work
+      - For each CATEGORY of named entity present in the source
+        (named person, specific tool/product, organization/company, named concept/effect),
+        ensure at least one item explicitly names a key representative
+    template: |
+      The following key points were extracted from a written work:
+
+      Sections covered: {{ args.section_topics | join(", ") }}
+
+      All extracted points:
+      {% for point in args.points %}
+      - [{{ point.category | upper }}] {{ point.point }}
+      {% endfor %}
+
+      Synthesize these into a structured summary. Follow the system prompt rules exactly:
+      - executive_summary: 3-4 tight sentences covering the whole work (max 600 chars)
+      - core_thesis: ONE sentence stating the central claim (max 200 chars)
+      - main_arguments: 12-16 ONE-sentence arguments, each max 200 chars; give EACH major topic its OWN item
+      - key_evidence: 8-12 ONE-sentence items naming specific people, tools, examples, or data (max 200 chars each)
+      - conclusions: 5-8 ONE-sentence actionable conclusions or recommendations
+
+      Pack maximum information per sentence. Use precise nouns. Omit filler phrases.
+      Give distinct topics their own argument — do not combine multiple topics in one item.
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: 3-4 sentence overview (max 600 chars)
+        core_thesis:
+          type: string
+          description: The central argument or claim in one sentence
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: 12-16 one-sentence arguments (max 200 chars each), one per distinct topic
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: 8-12 one-sentence evidence items with specific names and data (max 200 chars each)
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: 5-8 one-sentence conclusions or recommendations
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions
