@@ -30,21 +30,33 @@ steps:
         arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
         model: haiku
         system_prompt: |
-          You are an expert academic paper analyst. Your job is to extract
-          the key arguments, evidence, and insights from a section of a paper.
+          You are an expert academic paper analyst extracting structured information
+          from any type of written work — academic papers, essays, blog posts, books,
+          or reports. Your job is to capture ALL of the following from each section:
 
-          Be precise and faithful to the source material. Do not hallucinate
-          claims the author did not make. If a section is transitional or
-          contains mostly references, say so briefly.
+          1. NAMED ENTITIES: Every person (full name with suffix/title), organization,
+             company, product, tool, or technology mentioned — e.g. "Frederick P. Brooks Jr.",
+             "Google Reader", "Feedly", "Chris Wetherell", "The Wire".
+          2. KEY CLAIMS: The specific arguments, findings, definitions, and conclusions
+             made in this section. Include numerical data, percentages, and rankings.
+          3. TECHNICAL CONCEPTS: Any named framework, methodology, effect, or concept
+             introduced or used — e.g. "Kuleshov Effect", "chain of density", "NLI".
+          4. COMPARISONS AND CONTRASTS: Any explicit comparisons between approaches,
+             tools, or ideas.
+
+          Be faithful to the source. Extract exact phrasing when the author uses
+          specific language (e.g. "holds more promise than any other technical fad").
+          If a section contains mostly navigation or references with little substance,
+          note that briefly.
         template: |
-          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from an academic paper.
+          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from a written work.
 
           --- BEGIN CHUNK ---
           {{ args.text }}
           --- END CHUNK ---
 
-          Extract the key points from this section. For each point, indicate
-          whether it is an argument, evidence, a definition, or a conclusion.
+          Extract all key information from this section. Capture every named person,
+          organization, product, and tool explicitly. For each point, classify its type.
         output:
           type: object
           properties:
@@ -55,16 +67,10 @@ steps:
                 properties:
                   point:
                     type: string
-                    description: The key point or claim
+                    description: The key point, claim, entity, or concept — be specific and include names
                   category:
                     type: string
-                    enum:
-                      - argument
-                      - evidence
-                      - definition
-                      - conclusion
-                      - context
-                    description: What kind of point this is
+                    description: "Type: argument | evidence | definition | conclusion | named_entity | comparison"
                 required:
                   - point
                   - category
@@ -86,52 +92,71 @@ steps:
     arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
     model: sonnet
     system_prompt: |
-      You are an expert at synthesizing academic papers into clear,
-      structured summaries. You produce summaries that a busy researcher
-      could read in 2 minutes and understand the paper's contribution.
-    template: |
-      The following key points were extracted from an academic paper, organized
-      by the sections they appeared in:
+      You are an expert at synthesizing written works into dense, faithful, concise
+      structured summaries. You write for busy researchers who need maximum information
+      in minimum words.
 
-      {% for topic in args.section_topics %}
-      ## Section: {{ topic }}
-      {% endfor %}
+      FAITHFULNESS RULES (critical):
+      - Only state claims explicitly supported by the source material
+      - Use the author's own hedging language (e.g. "could", "may", "suggests") — never
+        upgrade to absolutes ("eliminates", "solves", "proves")
+      - Do not misattribute claims: if the author says X about Y, don't say X about Z
+      - Include the author's full name and affiliation when mentioned
+
+      CONCISENESS RULES (critical):
+      - Each main_argument must be ONE tight sentence (max 200 characters)
+      - Each key_evidence item must be ONE tight sentence (max 200 characters)
+      - Each conclusion must be ONE tight sentence (max 150 characters)
+      - The executive_summary must be 3-4 sentences (max 600 characters)
+      - Do NOT number the items — just write the point directly
+
+      COVERAGE RULES (critical):
+      - Include ALL named people (full names), organizations, products, and tools
+      - Include ALL specific comparisons, rankings, and quantitative claims
+      - Include ALL named concepts, frameworks, and technical terms introduced
+      - Cover every major section of the work
+    template: |
+      The following key points were extracted from a written work:
+
+      Sections covered: {{ args.section_topics | join(", ") }}
 
       All extracted points:
       {% for point in args.points %}
       - [{{ point.category | upper }}] {{ point.point }}
       {% endfor %}
 
-      Synthesize these into a structured summary of the paper with:
-      1. A one-paragraph executive summary
-      2. The paper's core thesis
-      3. The main arguments (numbered)
-      4. Key evidence or examples cited
-      5. The author's conclusions and recommendations
+      Synthesize these into a structured summary. Follow the system prompt rules exactly:
+      - executive_summary: 3-4 tight sentences covering the whole work (max 600 chars)
+      - core_thesis: ONE sentence stating the central claim (max 200 chars)
+      - main_arguments: 8-12 ONE-sentence arguments, each max 200 chars, covering all major points
+      - key_evidence: 6-10 ONE-sentence items naming specific people, tools, examples, or data
+      - conclusions: 5-8 ONE-sentence actionable conclusions or recommendations
+
+      Pack maximum information per sentence. Use precise nouns. Omit filler phrases.
     output:
       type: object
       properties:
         executive_summary:
           type: string
-          description: One paragraph overview of the entire paper
+          description: 3-4 sentence overview (max 600 chars)
         core_thesis:
           type: string
-          description: The central argument or claim of the paper
+          description: The central argument or claim in one sentence
         main_arguments:
           type: array
           items:
             type: string
-          description: The main arguments made in the paper
+          description: 8-12 one-sentence arguments (max 200 chars each)
         key_evidence:
           type: array
           items:
             type: string
-          description: Key evidence, examples, or case studies cited
+          description: 6-10 one-sentence evidence items with specific names and data
         conclusions:
           type: array
           items:
             type: string
-          description: The author's conclusions and recommendations
+          description: 5-8 one-sentence conclusions or recommendations
       required:
         - executive_summary
         - core_thesis
