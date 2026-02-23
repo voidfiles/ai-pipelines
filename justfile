@@ -12,3 +12,9 @@ lint:
 
 sync:
     uv sync --all-extras
+
+build:
+    uv build
+
+publish: build
+    uv publish
