@@ -1,0 +1,178 @@
+# EXPERIMENT: Fewer items with faithfulness constraints
+# DATE: 2026-02-22
+# HYPOTHESIS: Remove per-item char limits, use fewer items (7-9 args), stronger faithfulness
+# RESULT: average was 0.8798 (exp1 baseline 0.9245, regression!)
+# FAILURE REASON: Faithfulness dropped massively for systematic_review (0.9884→0.8743, 24 unsupported
+#   claims out of 191 total). The "fewer items" approach caused model to aggregate claims in ways
+#   not directly supported. Claim count increased for systematic_review (154→191) while support
+#   rate dropped significantly.
+# ---
+input:
+  type: object
+  properties:
+    paper_path:
+      type: string
+      description: Path to a markdown file containing an academic paper
+  required:
+    - paper_path
+
+steps:
+  # ── Read the paper ───────────────────────────────────────────────
+  - kind: read_file
+    name: paper
+    arguments: input.paper_path
+
+  # ── Chunk it into manageable pieces ──────────────────────────────
+  - kind: chunk
+    name: chunked
+    arguments: paper
+    chunk_size: 6000
+    overlap: 400
+
+  # ── Summarize each chunk ─────────────────────────────────────────
+  - kind: for_each
+    name: chunk_summaries
+    arguments: chunked.chunks
+    steps:
+      - kind: prompt
+        name: summary
+        arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
+        model: haiku
+        system_prompt: |
+          You are an expert analyst extracting structured information from any type of
+          written work — academic papers, essays, blog posts, books, or reports.
+
+          For each section, extract ALL of the following with precision:
+
+          1. NAMED ENTITIES: Every person (full name including Jr./Sr./Dr.), organization,
+             company, product, tool, technology, or named concept mentioned.
+             Examples: "Frederick P. Brooks Jr.", "Google Reader", "Chris Wetherell",
+             "The Wire", "Kuleshov Effect", "Harlan Mills", "UNC Chapel Hill".
+
+          2. SPECIFIC CLAIMS: Exact arguments, findings, statistics, rankings, and
+             comparisons. Use source phrasing when distinctive:
+             e.g. "holds more promise than any other technical fad"
+             e.g. "factor-of-five gain in productivity"
+
+          3. DEFINITIONS: Author-defined concepts or terms with their precise meaning.
+
+          4. CONCLUSIONS: Recommendations, predictions, or key takeaways.
+
+          Be faithful: only report what the text actually says. If a claim is hedged
+          ("could", "may", "suggests"), preserve that hedging.
+        template: |
+          This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from a written work.
+
+          --- BEGIN CHUNK ---
+          {{ args.text }}
+          --- END CHUNK ---
+
+          Extract ALL key information. Prioritize specific names, tools, statistics,
+          and distinctive phrasing. Classify each point accurately.
+        output:
+          type: object
+          properties:
+            key_points:
+              type: array
+              items:
+                type: object
+                properties:
+                  point:
+                    type: string
+                    description: The specific claim, name, definition, or concept — use exact source language when distinctive
+                  category:
+                    type: string
+                    description: "argument | evidence | definition | conclusion | named_entity | comparison"
+                required:
+                  - point
+                  - category
+            section_topic:
+              type: string
+              description: Brief description of what this section covers
+          required:
+            - key_points
+            - section_topic
+
+  # ── Flatten all key points ───────────────────────────────────────
+  - kind: transform
+    name: all_points
+    arguments: chunk_summaries.key_points
+
+  # ── Synthesize into a final summary ──────────────────────────────
+  - kind: prompt
+    name: final_summary
+    arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
+    model: sonnet
+    system_prompt: |
+      You are an expert at synthesizing written works into faithful, concise, and
+      informationally dense structured summaries.
+
+      FAITHFULNESS RULES (NON-NEGOTIABLE):
+      - Every claim in your summary must be directly supported by the extracted points
+      - Never upgrade hedged language: if source says "could reduce", do not write "reduces"
+      - Never misattribute: if author says X about Y, do not say X about Z
+      - If unsure whether a claim is supported, omit it or use "the author suggests..."
+      - Preserve author's exact distinctive phrasing when quoting key claims
+
+      COVERAGE RULES (for QA score):
+      - Name every significant person (full name), organization, product, and tool
+      - Include all specific comparisons, rankings, and quantitative data
+      - Cover every major section of the work
+      - Include the author's name and affiliation when known from the text
+
+      CONCISENESS RULES (for score):
+      - Write 7-9 main_arguments covering distinct major points
+      - Write 5-8 key_evidence items with specific names and data
+      - Write 4-7 conclusions
+      - Keep the executive_summary to 3-4 sentences
+      - Write tight sentences — pack information densely, omit filler words
+
+    template: |
+      The following key points were extracted from a written work:
+
+      Sections covered: {{ args.section_topics | join(", ") }}
+
+      All extracted points:
+      {% for point in args.points %}
+      - [{{ point.category | upper }}] {{ point.point }}
+      {% endfor %}
+
+      Synthesize these into a faithful, dense structured summary.
+
+      Write 7-9 main_arguments (distinct major claims, dense but not abbreviated).
+      Write 5-8 key_evidence items (specific names, tools, examples, data points).
+      Write 4-7 conclusions (actionable takeaways or predictions).
+      Executive summary: 3-4 sentences covering the full scope.
+
+      Before including any claim, verify it appears in the extracted points above.
+      Use the source's hedging language. Name all significant persons and tools.
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: 3-4 sentence overview of the entire work
+        core_thesis:
+          type: string
+          description: The central argument or claim in one sentence
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: 7-9 key arguments covering all major topics
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: 5-8 specific evidence items with names, examples, or data
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: 4-7 conclusions or recommendations from the work
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions
