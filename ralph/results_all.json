@@ -1,0 +1,62 @@
+{
+  "scores": [
+    {
+      "paper": "a_systematic_review_of_the_intrapersonal_correlates_of_motivational_climate_perceptions_in_sport_and_physical_activity_chris_g_harwood_richard_j_keega.md",
+      "scorecard": {
+        "summarization_score": 0.9123,
+        "qa_score": 0.85,
+        "conciseness": 0.9746,
+        "faithfulness_score": 1.0,
+        "supported_claims": 154,
+        "total_claims": 154,
+        "overall": 0.95615,
+        "detail": {
+          "keyphrases_extracted": 20,
+          "questions_generated": 20,
+          "questions_answered": 17,
+          "claims_decomposed": 154,
+          "claims_supported": 154
+        }
+      }
+    },
+    {
+      "paper": "feeding_our_reading_habits_alex_kessinger.md",
+      "scorecard": {
+        "summarization_score": 0.7512,
+        "qa_score": 0.65,
+        "conciseness": 0.8524,
+        "faithfulness_score": 0.9467,
+        "supported_claims": 71,
+        "total_claims": 75,
+        "overall": 0.84895,
+        "detail": {
+          "keyphrases_extracted": 20,
+          "questions_generated": 20,
+          "questions_answered": 13,
+          "claims_decomposed": 75,
+          "claims_supported": 71
+        }
+      }
+    },
+    {
+      "paper": "no_silver_bulletessence_and_accident_in_software_engineering_frederick_p_brooks_jr.md",
+      "scorecard": {
+        "summarization_score": 0.9045,
+        "qa_score": 1.0,
+        "conciseness": 0.809,
+        "faithfulness_score": 1.0,
+        "supported_claims": 87,
+        "total_claims": 87,
+        "overall": 0.95225,
+        "detail": {
+          "keyphrases_extracted": 20,
+          "questions_generated": 20,
+          "questions_answered": 20,
+          "claims_decomposed": 87,
+          "claims_supported": 87
+        }
+      }
+    }
+  ],
+  "average": 0.9191166666666667
+}
