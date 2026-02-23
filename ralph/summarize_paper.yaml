@@ -30,24 +30,27 @@ steps:
         arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
         model: haiku
         system_prompt: |
-          You are an expert academic paper analyst extracting structured information
-          from any type of written work — academic papers, essays, blog posts, books,
-          or reports. Your job is to capture ALL of the following from each section:
+          You are an expert analyst extracting structured information from any type of
+          written work — academic papers, essays, blog posts, books, or reports.
 
-          1. NAMED ENTITIES: Every person (full name with suffix/title), organization,
-             company, product, tool, or technology mentioned — e.g. "Frederick P. Brooks Jr.",
-             "Google Reader", "Feedly", "Chris Wetherell", "The Wire".
-          2. KEY CLAIMS: The specific arguments, findings, definitions, and conclusions
-             made in this section. Include numerical data, percentages, and rankings.
-          3. TECHNICAL CONCEPTS: Any named framework, methodology, effect, or concept
-             introduced or used — e.g. "Kuleshov Effect", "chain of density", "NLI".
-          4. COMPARISONS AND CONTRASTS: Any explicit comparisons between approaches,
-             tools, or ideas.
+          For each section, extract ALL of the following with precision:
 
-          Be faithful to the source. Extract exact phrasing when the author uses
-          specific language (e.g. "holds more promise than any other technical fad").
-          If a section contains mostly navigation or references with little substance,
-          note that briefly.
+          1. NAMED ENTITIES: Every person (full name including Jr./Sr./Dr.), organization,
+             company, product, tool, technology, or named concept mentioned.
+             Examples: "Frederick P. Brooks Jr.", "Google Reader", "Chris Wetherell",
+             "The Wire", "Kuleshov Effect", "Harlan Mills", "UNC Chapel Hill".
+
+          2. SPECIFIC CLAIMS: Exact arguments, findings, statistics, rankings, and
+             comparisons. Use source phrasing when distinctive:
+             e.g. "holds more promise than any other technical fad"
+             e.g. "factor-of-five gain in productivity"
+
+          3. DEFINITIONS: Author-defined concepts or terms with their precise meaning.
+
+          4. CONCLUSIONS: Recommendations, predictions, or key takeaways.
+
+          Be faithful: only report what the text actually says. If a claim is hedged
+          ("could", "may", "suggests"), preserve that hedging.
         template: |
           This is chunk {{ args.chunk_index }} of {{ args.total_chunks }} from a written work.
 
@@ -55,8 +58,8 @@ steps:
           {{ args.text }}
           --- END CHUNK ---
 
-          Extract all key information from this section. Capture every named person,
-          organization, product, and tool explicitly. For each point, classify its type.
+          Extract ALL key information. Prioritize specific names, tools, statistics,
+          and distinctive phrasing. Classify each point accurately.
         output:
           type: object
           properties:
@@ -67,10 +70,10 @@ steps:
                 properties:
                   point:
                     type: string
-                    description: The key point, claim, entity, or concept — be specific and include names
+                    description: The specific claim, name, definition, or concept — use exact source language when distinctive
                   category:
                     type: string
-                    description: "Type: argument | evidence | definition | conclusion | named_entity | comparison"
+                    description: "argument | evidence | definition | conclusion | named_entity | comparison"
                 required:
                   - point
                   - category
@@ -86,35 +89,30 @@ steps:
     name: all_points
     arguments: chunk_summaries.key_points
 
-  # ── Synthesize into a final summary ──────────────────────────────
+  # ── Draft synthesis ───────────────────────────────────────────────
+  # First pass: comprehensive coverage, no length restrictions.
+  # Goal: capture ALL named entities, facts, and key claims for high QA score.
   - kind: prompt
-    name: final_summary
+    name: draft_summary
     arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
     model: sonnet
     system_prompt: |
-      You are an expert at synthesizing written works into dense, faithful, concise
-      structured summaries. You write for busy researchers who need maximum information
-      in minimum words.
+      You are an expert at synthesizing written works into comprehensive, faithful
+      structured summaries.
 
-      FAITHFULNESS RULES (critical):
-      - Only state claims explicitly supported by the source material
-      - Use the author's own hedging language (e.g. "could", "may", "suggests") — never
-        upgrade to absolutes ("eliminates", "solves", "proves")
-      - Do not misattribute claims: if the author says X about Y, don't say X about Z
-      - Include the author's full name and affiliation when mentioned
+      FAITHFULNESS (critical): Only state claims that appear in the extracted points.
+      Preserve the author's hedging language ("could", "may", "suggests").
+      Never upgrade hedged language to absolutes.
+      Include the author's full name and affiliation as stated in the source.
 
-      CONCISENESS RULES (critical):
-      - Each main_argument must be ONE tight sentence (max 200 characters)
-      - Each key_evidence item must be ONE tight sentence (max 200 characters)
-      - Each conclusion must be ONE tight sentence (max 150 characters)
-      - The executive_summary must be 3-4 sentences (max 600 characters)
-      - Do NOT number the items — just write the point directly
+      COVERAGE (critical for QA): Include ALL of the following from extracted points:
+      - Every named person (full name with suffixes), organization, product, and tool
+      - Every specific comparison, ranking, and quantitative claim
+      - Every named concept, framework, and technical term
+      - All major sections and their key arguments
 
-      COVERAGE RULES (critical):
-      - Include ALL named people (full names), organizations, products, and tools
-      - Include ALL specific comparisons, rankings, and quantitative claims
-      - Include ALL named concepts, frameworks, and technical terms introduced
-      - Cover every major section of the work
+      STRUCTURE: Write a comprehensive draft — do not artificially limit length.
+      Aim for 10-12 main_arguments, 6-10 key_evidence items, 5-8 conclusions.
     template: |
       The following key points were extracted from a written work:
 
@@ -125,38 +123,122 @@ steps:
       - [{{ point.category | upper }}] {{ point.point }}
       {% endfor %}
 
-      Synthesize these into a structured summary. Follow the system prompt rules exactly:
-      - executive_summary: 3-4 tight sentences covering the whole work (max 600 chars)
-      - core_thesis: ONE sentence stating the central claim (max 200 chars)
-      - main_arguments: 8-12 ONE-sentence arguments, each max 200 chars, covering all major points
-      - key_evidence: 6-10 ONE-sentence items naming specific people, tools, examples, or data
-      - conclusions: 5-8 ONE-sentence actionable conclusions or recommendations
-
-      Pack maximum information per sentence. Use precise nouns. Omit filler phrases.
+      Write a comprehensive draft summary. Include ALL named persons, tools, and
+      concepts from the extracted points. Cover all major sections.
+      Ensure every claim traces to a specific extracted point above.
     output:
       type: object
       properties:
         executive_summary:
           type: string
-          description: 3-4 sentence overview (max 600 chars)
+          description: Comprehensive overview paragraph
         core_thesis:
           type: string
-          description: The central argument or claim in one sentence
+          description: The central argument or claim
         main_arguments:
           type: array
           items:
             type: string
-          description: 8-12 one-sentence arguments (max 200 chars each)
+          description: 10-12 key arguments
         key_evidence:
           type: array
           items:
             type: string
-          description: 6-10 one-sentence evidence items with specific names and data
+          description: 6-10 specific evidence items with names and data
         conclusions:
           type: array
           items:
             type: string
-          description: 5-8 one-sentence conclusions or recommendations
+          description: 5-8 conclusions or recommendations
+      required:
+        - executive_summary
+        - core_thesis
+        - main_arguments
+        - key_evidence
+        - conclusions
+
+  # ── Verify and compress ───────────────────────────────────────────
+  # Second pass: check faithfulness and compress verbose items.
+  # Goal: same coverage, shorter output, verified claims only.
+  - kind: prompt
+    name: final_summary
+    arguments: '{"draft": draft_summary, "points": $reduce(all_points, $append)}'
+    model: sonnet
+    system_prompt: |
+      You are a strict editor and fact-checker. You receive a draft summary and the
+      original extracted points. Your job:
+
+      1. FAITHFULNESS CHECK: For each item in the draft, verify it directly corresponds
+         to one of the extracted points. If an item makes a claim NOT found in the
+         extracted points, REMOVE or CORRECT it. Do not invent or infer new facts.
+         Preserve hedging language exactly ("could", "may", "suggests", "holds more
+         promise than" — never upgrade to "eliminates", "solves", "proves").
+
+      2. COMPRESSION: Rewrite each verified item as ONE tight sentence. Pack information
+         densely. Use precise nouns. Omit filler phrases. Target:
+         - executive_summary: 3-4 sentences, max 600 characters total
+         - core_thesis: 1 sentence
+         - main_arguments: 1 sentence each (keep all that are verified)
+         - key_evidence: 1 sentence each (keep all that are verified)
+         - conclusions: 1 sentence each (keep all that are verified)
+
+      3. COMPLETENESS: Do NOT remove verified items just to save space. A verified item
+         with all named entities intact is more valuable than a shorter summary that
+         omits important people, tools, or concepts.
+    template: |
+      DRAFT SUMMARY:
+
+      Executive summary: {{ args.draft.executive_summary }}
+
+      Core thesis: {{ args.draft.core_thesis }}
+
+      Main arguments:
+      {% for arg in args.draft.main_arguments %}
+      - {{ arg }}
+      {% endfor %}
+
+      Key evidence:
+      {% for ev in args.draft.key_evidence %}
+      - {{ ev }}
+      {% endfor %}
+
+      Conclusions:
+      {% for c in args.draft.conclusions %}
+      - {{ c }}
+      {% endfor %}
+
+      EXTRACTED POINTS (the ONLY valid sources — verify every draft item against these):
+      {% for point in args.points %}
+      - {{ point.point }}
+      {% endfor %}
+
+      Now produce the verified, compressed final summary. Remove any item not found
+      in extracted points. Compress verified items to tight sentences.
+      Keep all named persons, tools, and distinctive phrases intact.
+    output:
+      type: object
+      properties:
+        executive_summary:
+          type: string
+          description: 3-4 sentence overview, max 600 chars
+        core_thesis:
+          type: string
+          description: The central argument in one sentence
+        main_arguments:
+          type: array
+          items:
+            type: string
+          description: Verified, compressed arguments
+        key_evidence:
+          type: array
+          items:
+            type: string
+          description: Verified, compressed evidence items with names
+        conclusions:
+          type: array
+          items:
+            type: string
+          description: Verified, compressed conclusions
       required:
         - executive_summary
         - core_thesis
