@@ -3,60 +3,60 @@
     {
       "paper": "a_systematic_review_of_the_intrapersonal_correlates_of_motivational_climate_perceptions_in_sport_and_physical_activity_chris_g_harwood_richard_j_keega.md",
       "scorecard": {
-        "summarization_score": 0.9154,
-        "qa_score": 0.85,
-        "conciseness": 0.9809,
-        "faithfulness_score": 1.0,
-        "supported_claims": 86,
-        "total_claims": 86,
-        "overall": 0.9577,
+        "summarization_score": 0.9635,
+        "qa_score": 0.95,
+        "conciseness": 0.977,
+        "faithfulness_score": 0.9593,
+        "supported_claims": 118,
+        "total_claims": 123,
+        "overall": 0.9614,
         "detail": {
           "keyphrases_extracted": 20,
           "questions_generated": 20,
-          "questions_answered": 17,
-          "claims_decomposed": 86,
-          "claims_supported": 86
+          "questions_answered": 19,
+          "claims_decomposed": 123,
+          "claims_supported": 118
         }
       }
     },
     {
       "paper": "feeding_our_reading_habits_alex_kessinger.md",
       "scorecard": {
-        "summarization_score": 0.8673,
-        "qa_score": 0.85,
-        "conciseness": 0.8845,
-        "faithfulness_score": 0.9583,
-        "supported_claims": 46,
-        "total_claims": 48,
-        "overall": 0.9128000000000001,
+        "summarization_score": 0.8359,
+        "qa_score": 0.8,
+        "conciseness": 0.8717,
+        "faithfulness_score": 0.9592,
+        "supported_claims": 94,
+        "total_claims": 98,
+        "overall": 0.8975500000000001,
         "detail": {
           "keyphrases_extracted": 20,
           "questions_generated": 20,
-          "questions_answered": 17,
-          "claims_decomposed": 48,
-          "claims_supported": 46
+          "questions_answered": 16,
+          "claims_decomposed": 98,
+          "claims_supported": 94
         }
       }
     },
     {
       "paper": "no_silver_bulletessence_and_accident_in_software_engineering_frederick_p_brooks_jr.md",
       "scorecard": {
-        "summarization_score": 0.8387,
-        "qa_score": 0.8182,
-        "conciseness": 0.8592,
-        "faithfulness_score": 1.0,
-        "supported_claims": 116,
-        "total_claims": 116,
-        "overall": 0.91935,
+        "summarization_score": 0.9323,
+        "qa_score": 1.0,
+        "conciseness": 0.8646,
+        "faithfulness_score": 0.9898,
+        "supported_claims": 97,
+        "total_claims": 98,
+        "overall": 0.96105,
         "detail": {
-          "keyphrases_extracted": 22,
-          "questions_generated": 22,
-          "questions_answered": 18,
-          "claims_decomposed": 116,
-          "claims_supported": 116
+          "keyphrases_extracted": 20,
+          "questions_generated": 20,
+          "questions_answered": 20,
+          "claims_decomposed": 98,
+          "claims_supported": 97
         }
       }
     }
   ],
-  "average": 0.9299499999999999
+  "average": 0.9400000000000001
 }

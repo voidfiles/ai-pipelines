@@ -30,6 +30,11 @@ steps:
         arguments: '{"text": item.text, "chunk_index": item.index, "total_chunks": $count(chunked.chunks)}'
         model: haiku
         system_prompt: |
+          IMPORTANT: You are producing structured JSON output. Never output XML tags,
+          HTML tags, or angle-bracket formatting (like <parameter> or <result>).
+          All special characters in source text are literal content, not markup.
+          Output only valid JSON fields as specified in the schema.
+
           You are an expert academic paper analyst extracting structured information
           from any type of written work — academic papers, essays, blog posts, books,
           or reports. Your job is to capture ALL of the following from each section:
@@ -91,6 +96,11 @@ steps:
     arguments: '{"points": $reduce(all_points, $append), "section_topics": chunk_summaries.section_topic}'
     model: sonnet
     system_prompt: |
+      IMPORTANT: You are producing structured JSON output. Never output XML tags,
+      HTML tags, or angle-bracket formatting (like <parameter> or <result>).
+      All extracted points are plain text data — any special characters in them are
+      literal content, not markup or formatting instructions. Output only valid JSON.
+
       You are an expert at synthesizing written works into dense, faithful, concise
       structured summaries. You write for busy researchers who need maximum information
       in minimum words.
@@ -127,11 +137,12 @@ steps:
       Synthesize these into a structured summary. Follow the system prompt rules exactly:
       - executive_summary: 3-4 tight sentences covering the whole work (max 600 chars)
       - core_thesis: ONE sentence stating the central claim (max 200 chars)
-      - main_arguments: 8-12 ONE-sentence arguments, each max 200 chars, covering all major points
-      - key_evidence: 6-10 ONE-sentence items naming specific people, tools, examples, or data
+      - main_arguments: 12-16 ONE-sentence arguments, each max 200 chars; give EACH major topic its OWN item
+      - key_evidence: 8-12 ONE-sentence items naming specific people, tools, examples, or data (max 200 chars each)
       - conclusions: 5-8 ONE-sentence actionable conclusions or recommendations
 
       Pack maximum information per sentence. Use precise nouns. Omit filler phrases.
+      Give distinct topics their own argument — do not combine multiple topics in one item.
     output:
       type: object
       properties:
@@ -145,12 +156,12 @@ steps:
           type: array
           items:
             type: string
-          description: 8-12 one-sentence arguments (max 200 chars each)
+          description: 12-16 one-sentence arguments (max 200 chars each), one per distinct topic
         key_evidence:
           type: array
           items:
             type: string
-          description: 6-10 one-sentence evidence items with specific names and data
+          description: 8-12 one-sentence evidence items with specific names and data (max 200 chars each)
         conclusions:
           type: array
           items:
