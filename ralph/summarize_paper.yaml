@@ -158,35 +158,41 @@ steps:
         - conclusions
 
   # ── Verify and compress ───────────────────────────────────────────
-  # Second pass: check faithfulness and compress verbose items.
-  # Goal: same coverage, shorter output, verified claims only.
+  # Second pass: check faithfulness and aggressively compress.
+  # Goal: same coverage, much shorter output, verified claims only.
   - kind: prompt
     name: final_summary
     arguments: '{"draft": draft_summary, "points": $reduce(all_points, $append)}'
     model: sonnet
     system_prompt: |
       You are a strict editor and fact-checker. You receive a draft summary and the
-      original extracted points. Your job:
+      original extracted points. Your job is to produce a faithful, CONCISE final summary.
 
-      1. FAITHFULNESS CHECK: For each item in the draft, verify it directly corresponds
-         to one of the extracted points. If an item makes a claim NOT found in the
-         extracted points, REMOVE or CORRECT it. Do not invent or infer new facts.
-         Preserve hedging language exactly ("could", "may", "suggests", "holds more
-         promise than" — never upgrade to "eliminates", "solves", "proves").
+      STEP 1 — FAITHFULNESS CHECK:
+      For each draft item, verify it corresponds to extracted points. Remove or correct
+      anything not directly supported. Preserve hedging language exactly ("could", "may",
+      "suggests") — never upgrade to absolutes ("eliminates", "solves", "proves").
 
-      2. COMPRESSION: Rewrite each verified item as ONE tight sentence. Pack information
-         densely. Use precise nouns. Omit filler phrases. Target:
-         - executive_summary: 3-4 sentences, max 600 characters total
-         - core_thesis: 1 sentence
-         - main_arguments: 1 sentence each (keep all that are verified)
-         - key_evidence: 1 sentence each (keep all that are verified)
-         - conclusions: 1 sentence each (keep all that are verified)
+      STEP 2 — AGGRESSIVE COMPRESSION:
+      Rewrite every verified item as ONE tight sentence. STRICT limits:
+      - executive_summary: EXACTLY 3 sentences, MAXIMUM 500 characters total
+      - core_thesis: 1 sentence, max 150 characters
+      - main_arguments: 1 sentence each, MAXIMUM 220 characters per item
+        If two draft arguments cover overlapping content, MERGE them into one sentence.
+        Keep 8-12 items total.
+      - key_evidence: 1 sentence each, MAXIMUM 200 characters per item
+        Keep 6-9 items total.
+      - conclusions: 1 sentence each, MAXIMUM 150 characters per item
+        Keep 4-7 items total.
 
-      3. COMPLETENESS: Do NOT remove verified items just to save space. A verified item
-         with all named entities intact is more valuable than a shorter summary that
-         omits important people, tools, or concepts.
+      STEP 3 — COVERAGE CHECK:
+      Verify all critical named entities (persons, tools, organizations) from the draft
+      appear at least once in the compressed output. If a named entity was lost during
+      compression, work it into the most relevant item.
+
+      Pack maximum information per sentence. Use precise nouns over vague descriptions.
     template: |
-      DRAFT SUMMARY:
+      DRAFT SUMMARY TO COMPRESS AND VERIFY:
 
       Executive summary: {{ args.draft.executive_summary }}
 
@@ -207,38 +213,37 @@ steps:
       - {{ c }}
       {% endfor %}
 
-      EXTRACTED POINTS (the ONLY valid sources — verify every draft item against these):
+      EXTRACTED POINTS (the ONLY valid sources):
       {% for point in args.points %}
       - {{ point.point }}
       {% endfor %}
 
-      Now produce the verified, compressed final summary. Remove any item not found
-      in extracted points. Compress verified items to tight sentences.
-      Keep all named persons, tools, and distinctive phrases intact.
+      Produce the final verified+compressed summary following all rules in the system prompt.
+      Every sentence must be tight and dense. All named entities must be preserved.
     output:
       type: object
       properties:
         executive_summary:
           type: string
-          description: 3-4 sentence overview, max 600 chars
+          description: Exactly 3 sentences, max 500 chars total
         core_thesis:
           type: string
-          description: The central argument in one sentence
+          description: The central argument in one sentence, max 150 chars
         main_arguments:
           type: array
           items:
             type: string
-          description: Verified, compressed arguments
+          description: 8-12 verified, compressed arguments (1 sentence, max 220 chars each)
         key_evidence:
           type: array
           items:
             type: string
-          description: Verified, compressed evidence items with names
+          description: 6-9 verified, compressed evidence items with names (max 200 chars each)
         conclusions:
           type: array
           items:
             type: string
-          description: Verified, compressed conclusions
+          description: 4-7 verified, compressed conclusions (max 150 chars each)
       required:
         - executive_summary
         - core_thesis
