@@ -3,60 +3,60 @@
     {
       "paper": "a_systematic_review_of_the_intrapersonal_correlates_of_motivational_climate_perceptions_in_sport_and_physical_activity_chris_g_harwood_richard_j_keega.md",
       "scorecard": {
-        "summarization_score": 0.967,
-        "qa_score": 1.0,
-        "conciseness": 0.9339,
-        "faithfulness_score": 0.9515,
-        "supported_claims": 157,
-        "total_claims": 165,
-        "overall": 0.9592499999999999,
+        "summarization_score": 0.9154,
+        "qa_score": 0.85,
+        "conciseness": 0.9809,
+        "faithfulness_score": 1.0,
+        "supported_claims": 86,
+        "total_claims": 86,
+        "overall": 0.9577,
         "detail": {
           "keyphrases_extracted": 20,
           "questions_generated": 20,
-          "questions_answered": 20,
-          "claims_decomposed": 165,
-          "claims_supported": 157
+          "questions_answered": 17,
+          "claims_decomposed": 86,
+          "claims_supported": 86
         }
       }
     },
     {
       "paper": "feeding_our_reading_habits_alex_kessinger.md",
       "scorecard": {
-        "summarization_score": 0.7909,
-        "qa_score": 0.8,
-        "conciseness": 0.7817,
-        "faithfulness_score": 0.9855,
-        "supported_claims": 68,
-        "total_claims": 69,
-        "overall": 0.8882000000000001,
+        "summarization_score": 0.8673,
+        "qa_score": 0.85,
+        "conciseness": 0.8845,
+        "faithfulness_score": 0.9583,
+        "supported_claims": 46,
+        "total_claims": 48,
+        "overall": 0.9128000000000001,
         "detail": {
-          "keyphrases_extracted": 15,
-          "questions_generated": 15,
-          "questions_answered": 12,
-          "claims_decomposed": 69,
-          "claims_supported": 68
+          "keyphrases_extracted": 20,
+          "questions_generated": 20,
+          "questions_answered": 17,
+          "claims_decomposed": 48,
+          "claims_supported": 46
         }
       }
     },
     {
       "paper": "no_silver_bulletessence_and_accident_in_software_engineering_frederick_p_brooks_jr.md",
       "scorecard": {
-        "summarization_score": 0.8572,
-        "qa_score": 1.0,
-        "conciseness": 0.7143,
+        "summarization_score": 0.8387,
+        "qa_score": 0.8182,
+        "conciseness": 0.8592,
         "faithfulness_score": 1.0,
-        "supported_claims": 157,
-        "total_claims": 157,
-        "overall": 0.9286,
+        "supported_claims": 116,
+        "total_claims": 116,
+        "overall": 0.91935,
         "detail": {
-          "keyphrases_extracted": 20,
-          "questions_generated": 20,
-          "questions_answered": 20,
-          "claims_decomposed": 157,
-          "claims_supported": 157
+          "keyphrases_extracted": 22,
+          "questions_generated": 22,
+          "questions_answered": 18,
+          "claims_decomposed": 116,
+          "claims_supported": 116
         }
       }
     }
   ],
-  "average": 0.92535
+  "average": 0.9299499999999999
 }
