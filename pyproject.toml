@@ -30,6 +30,9 @@ dev = [
     "pytest-asyncio>=0.24",
 ]
 
+[project.scripts]
+ai-pipelines = "ai_pipelines.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/voidfiles/ai-pipelines"
 Repository = "https://github.com/voidfiles/ai-pipelines"
